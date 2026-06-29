@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+# post-commit — OttoFlow workflow automation hook
+#
+# Triggers:
+#   1. PROPOSAL_*.md or DESIGN_*.md committed  → review-design.sh (adversarial review)
+#   2. REVIEW_*.md committed                   → apply-code-fixes.sh (Claude Code fixer)
+#   3. Go/Helm/YAML code committed             → review-code.sh (Gemini KB-grounded review)
+#      On APPROVED → push + Slack
+#      On NEEDS REVISION → commit REVIEW_CODE_*.md → apply-code-fixes → re-review loop
+#
+# TOOLS_DIR must point to your clone of ottoflow-workflow-tools/scripts.
+# Set in your shell or here directly:
+TOOLS_DIR="${OTTOFLOW_TOOLS_DIR:-$HOME/Nirmata/ottoflow-workflow-tools/scripts}"
+
+[[ -f "$TOOLS_DIR/config.sh" ]] || {
+    echo "[post-commit] TOOLS_DIR not found: $TOOLS_DIR — set OTTOFLOW_TOOLS_DIR" >&2
+    exit 0  # Fail open so normal commits are never blocked
+}
+
+COMMIT_SHA=$(git rev-parse HEAD)
+BRANCH=$(git rev-parse --abbrev-ref HEAD)
+
+DESIGN_DOCS=()
+REVIEW_DOCS=()
+CODE_FILES=()
+IS_REVIEW_COMMIT=false
+
+while IFS= read -r file; do
+    case "$file" in
+        docs/dev/PROPOSAL_*.md|docs/dev/DESIGN_*.md)
+            DESIGN_DOCS+=("$(git rev-parse --show-toplevel)/$file") ;;
+        docs/dev/REVIEW_*.md|docs/dev/REVIEW_CODE_*.md)
+            REVIEW_DOCS+=("$(git rev-parse --show-toplevel)/$file")
+            IS_REVIEW_COMMIT=true ;;
+        *.go|charts/**|*.yaml|*.yml|samples/**/*.*)
+            CODE_FILES+=("$file") ;;
+    esac
+done < <(git diff-tree --no-commit-id -r --name-only HEAD)
+
+if [[ ${#DESIGN_DOCS[@]} -gt 0 ]]; then
+    bash "$TOOLS_DIR/review-design.sh" "${DESIGN_DOCS[@]}" &
+    disown
+fi
+
+if [[ ${#REVIEW_DOCS[@]} -gt 0 ]]; then
+    bash "$TOOLS_DIR/apply-code-fixes.sh" "${REVIEW_DOCS[0]}" "$BRANCH" &
+    disown
+fi
+
+if [[ ${#CODE_FILES[@]} -gt 0 && "$IS_REVIEW_COMMIT" == "false" ]]; then
+    # Skip docs/* branches (design-only branches don't need code review)
+    [[ "$BRANCH" == docs/* ]] && exit 0
+    # Skip review/fix/docs commits to prevent loops
+    COMMIT_MSG=$(git log -1 --format="%s" HEAD)
+    case "$COMMIT_MSG" in
+        review:*|"fix: address code review"*|docs:*) exit 0 ;;
+    esac
+    bash "$TOOLS_DIR/review-code.sh" "$COMMIT_SHA" "$BRANCH" &
+    disown
+fi
+
+exit 0
