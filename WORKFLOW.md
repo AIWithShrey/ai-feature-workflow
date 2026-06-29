@@ -1,6 +1,6 @@
 # AI-Assisted Feature Development Workflow
 
-An end-to-end workflow for implementing GitHub issues using [Hermes Agent](https://hermes-agent.nousresearch.com) as orchestrator, Claude Code for implementation, and Gemini for adversarial design and code review.
+An end-to-end workflow for implementing GitHub issues using [Hermes Agent](https://hermes-agent.nousresearch.com) as orchestrator, Claude Code for implementation, and Claude Sonnet 4.6 for adversarial design and code review.
 
 Works with any GitHub repo.
 
@@ -11,9 +11,9 @@ Works with any GitHub repo.
 Install once per developer machine:
 
 ```bash
-# Hermes Agent (orchestrator + Slack/Gemini integration)
+# Hermes Agent (orchestrator + Slack integration)
 curl -sSL https://hermes-agent.nousresearch.com/install | sh
-hermes setup    # configure API keys (Anthropic + Google)
+hermes setup    # configure API keys (Anthropic)
 
 # Claude Code (autonomous implementation agent)
 npm install -g @anthropic-ai/claude-code
@@ -85,7 +85,7 @@ bash ~/workflow-tools/scripts/design-issue.sh <issue-number>
 This:
 1. Fetches the issue from GitHub
 2. Invokes the `design-docs` Hermes profile to write a `PROPOSAL_*.md`
-3. Runs up to 3 rounds of adversarial Gemini review, editing the proposal in-place
+3. Runs up to 3 rounds of adversarial Claude review, editing the proposal in-place
 4. Exits when the proposal is **APPROVED**
 
 You receive a Slack DM at each review iteration and a ✅ when approved.
@@ -145,7 +145,7 @@ The `post-commit` hook runs automatically on future commits:
 |---|---|
 | `PROPOSAL_*.md` or `DESIGN_*.md` | Adversarial design review (up to 3 rounds) |
 | `REVIEW_CODE_*.md` | Claude Code applies fixes + re-commits |
-| Any code file | Gemini diff review; APPROVED → auto-push; NEEDS REVISION → fix loop |
+| Any code file | Claude diff review; APPROVED → auto-push; NEEDS REVISION → fix loop |
 | Commit message starts `review:` / `fix: address code review` / `docs:` / `chore:` | Skipped (loop guard) |
 
 When you receive manual PR review findings from teammates, write a fix task and run Claude Code:

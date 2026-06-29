@@ -16,7 +16,7 @@ GitHub Issue
      ▼
  [design-issue.sh]
  AI drafts a design proposal (PROPOSAL_*.md)
- Gemini adversarially reviews it — up to 3 rounds
+ Claude adversarially reviews it — up to 3 rounds
  Edits the proposal in-place until APPROVED
      │
      ▼
@@ -37,7 +37,7 @@ GitHub Issue
      │
      ▼
  [post-commit hook] ← fires automatically on every commit
- Gemini reviews the diff against the codebase knowledge base
+ Claude reviews the diff against the codebase knowledge base
  APPROVED → auto-push
  NEEDS REVISION → Claude Code applies fixes → re-review loop
      │
@@ -60,7 +60,7 @@ Everything else — design drafting, adversarial review, implementation, testing
 |---|---|
 | **[Hermes Agent](https://hermes-agent.nousresearch.com)** | Orchestrator. Runs design review, code review, and Slack notifications. Hosts the `design-docs` and `codebase-explorer` profiles. |
 | **[Claude Code](https://docs.anthropic.com/en/docs/claude-code)** | Implementation agent. Reads the approved design spec and writes all the code, runs quality gates, commits. |
-| **Gemini** | Adversarial reviewer. Reviews designs and code diffs. Using a different model from the implementer catches blind spots — Gemini and Claude have different reasoning patterns. |
+| **Claude Sonnet 4.6** | Adversarial reviewer. Reviews designs and code diffs. The same model that implements also reviews — grounding in the codebase KB keeps findings concrete and accurate. |
 | **Git hooks** | Glue. `post-commit` fires the right script automatically based on what changed. `post-merge` rebuilds the knowledge base when `main` is updated. |
 | **Obsidian KB** *(optional)* | When configured, the codebase-explorer profile builds a knowledge graph of your repo into an Obsidian vault. Review prompts load relevant notes to ground findings in actual code, not hallucinations. |
 
@@ -79,7 +79,6 @@ hermes setup
 
 `hermes setup` will walk you through connecting your API keys. You need:
 - **Anthropic API key** — for Claude (implementation, design drafting)
-- **Google AI API key** — for Gemini (adversarial review)
 - **Slack bot token** *(optional)* — for notifications
 
 To configure Slack, add a bot to your workspace and get the bot token, then run:
@@ -224,7 +223,7 @@ bash ~/ai-feature-workflow/scripts/design-issue.sh 88
 Replace `88` with your issue number. The script:
 - Fetches the issue title and body from GitHub
 - Invokes the `design-docs` AI profile to draft a `PROPOSAL_*.md` in `docs/dev/`
-- Runs up to 3 rounds of adversarial review, editing the proposal until Gemini approves it
+- Runs up to 3 rounds of adversarial review, editing the proposal until Claude approves it
 - Sends you a Slack DM at each review round and a ✅ when done
 
 This takes 5–15 minutes depending on proposal complexity.
@@ -297,9 +296,9 @@ The `post-commit` hook fires automatically on every future commit to this branch
 
 | What you committed | What happens |
 |---|---|
-| `PROPOSAL_*.md` or `DESIGN_*.md` | Gemini adversarially reviews it (up to 3 rounds) |
+| `PROPOSAL_*.md` or `DESIGN_*.md` | Claude adversarially reviews it (up to 3 rounds) |
 | A `REVIEW_CODE_*.md` file | Claude Code applies the fixes and re-commits |
-| Any code file (`.go`, `.py`, `.ts`, `.yaml`, …) | Gemini reviews the diff; APPROVED → auto-push; NEEDS REVISION → fix loop |
+| Any code file (`.go`, `.py`, `.ts`, `.yaml`, …) | Claude reviews the diff; APPROVED → auto-push; NEEDS REVISION → fix loop |
 | Commit message starts with `review:`, `docs:`, `chore:` | Skipped to prevent infinite loops |
 
 ### Handling PR review feedback from teammates
@@ -355,11 +354,11 @@ ai-feature-workflow/
 ├── scripts/
 │   ├── config.sh              ← reads env vars, shared by all scripts
 │   ├── design-issue.sh        ← Step 1: draft + review proposal
-│   ├── review-design.sh       ← adversarial Gemini review loop
+│   ├── review-design.sh       ← adversarial Claude review loop
 │   ├── open-design-pr.sh      ← Step 2: commit + open PR + Slack
 │   ├── poll-approval.sh       ← Step 3: detect GH approval → trigger impl
 │   ├── invoke-impl.sh         ← Step 3: Claude Code implementation via tmux
-│   ├── review-code.sh         ← Gemini diff review (called by hook)
+│   ├── review-code.sh         ← Claude diff review (called by hook)
 │   ├── apply-code-fixes.sh    ← Claude Code fix loop (called by hook)
 │   └── explore-repo.sh        ← rebuild Obsidian KB (called by post-merge)
 │
@@ -413,7 +412,7 @@ Increase the iteration limit:
 bash ~/ai-feature-workflow/scripts/review-design.sh PROPOSAL.md 6
 ```
 
-Also check that your proposal has explicit acceptance criteria — Gemini needs concrete criteria to evaluate against, not just prose description.
+Also check that your proposal has explicit acceptance criteria — the reviewer needs concrete criteria to evaluate against, not just prose description.
 
 **`gh` can't open a PR** (`GraphQL: Head sha can't be blank`)
 

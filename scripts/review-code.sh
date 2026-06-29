@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# review-code.sh — Gemini reviews a git commit diff, optionally grounded by an Obsidian KB.
+# review-code.sh — Reviews a git commit diff using Claude Sonnet, optionally grounded by an Obsidian KB.
 # On APPROVED: pushes to remote + Slack notification.
 # On NEEDS REVISION: commits REVIEW_CODE_<sha>.md → apply-code-fixes.sh handles it.
 #
