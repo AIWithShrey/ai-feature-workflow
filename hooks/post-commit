@@ -1,24 +1,20 @@
 #!/usr/bin/env bash
-# post-commit — OttoFlow workflow automation hook
+# post-commit — AI workflow automation hook.
+# Delegates to the workflow tools directory (WORKFLOW_TOOLS_DIR).
 #
-# Triggers:
-#   1. PROPOSAL_*.md or DESIGN_*.md committed  → review-design.sh (adversarial review)
-#   2. REVIEW_*.md committed                   → apply-code-fixes.sh (Claude Code fixer)
-#   3. Go/Helm/YAML code committed             → review-code.sh (Gemini KB-grounded review)
-#      On APPROVED → push + Slack
-#      On NEEDS REVISION → commit REVIEW_CODE_*.md → apply-code-fixes → re-review loop
-#
-# TOOLS_DIR must point to your clone of ottoflow-workflow-tools/scripts.
-# Set in your shell or here directly:
-TOOLS_DIR="${OTTOFLOW_TOOLS_DIR:-$HOME/Nirmata/ottoflow-workflow-tools/scripts}"
+# Set WORKFLOW_TOOLS_DIR in your shell rc or in .git/hooks/env:
+#   export WORKFLOW_TOOLS_DIR=/path/to/workflow-tools/scripts
 
-[[ -f "$TOOLS_DIR/config.sh" ]] || {
-    echo "[post-commit] TOOLS_DIR not found: $TOOLS_DIR — set OTTOFLOW_TOOLS_DIR" >&2
-    exit 0  # Fail open so normal commits are never blocked
-}
+TOOLS_DIR="${WORKFLOW_TOOLS_DIR:-}"
+
+if [[ -z "$TOOLS_DIR" || ! -f "$TOOLS_DIR/config.sh" ]]; then
+    # Fail open — never block a commit
+    exit 0
+fi
 
 COMMIT_SHA=$(git rev-parse HEAD)
 BRANCH=$(git rev-parse --abbrev-ref HEAD)
+REPO_ROOT="$(git rev-parse --show-toplevel)"
 
 DESIGN_DOCS=()
 REVIEW_DOCS=()
@@ -27,36 +23,35 @@ IS_REVIEW_COMMIT=false
 
 while IFS= read -r file; do
     case "$file" in
-        docs/dev/PROPOSAL_*.md|docs/dev/DESIGN_*.md)
-            DESIGN_DOCS+=("$(git rev-parse --show-toplevel)/$file") ;;
-        docs/dev/REVIEW_*.md|docs/dev/REVIEW_CODE_*.md)
-            REVIEW_DOCS+=("$(git rev-parse --show-toplevel)/$file")
+        # Adjust these patterns to match your repo's design doc location
+        docs/*/PROPOSAL_*.md|docs/*/DESIGN_*.md)
+            DESIGN_DOCS+=("$REPO_ROOT/$file") ;;
+        docs/*/REVIEW_*.md|docs/*/REVIEW_CODE_*.md)
+            REVIEW_DOCS+=("$REPO_ROOT/$file")
             IS_REVIEW_COMMIT=true ;;
-        *.go|charts/**|*.yaml|*.yml|samples/**/*.*)
+        *.go|*.ts|*.py|*.yaml|*.yml|*.json)
             CODE_FILES+=("$file") ;;
     esac
 done < <(git diff-tree --no-commit-id -r --name-only HEAD)
 
+# Design doc committed → adversarial review
 if [[ ${#DESIGN_DOCS[@]} -gt 0 ]]; then
-    bash "$TOOLS_DIR/review-design.sh" "${DESIGN_DOCS[@]}" &
-    disown
+    bash "$TOOLS_DIR/review-design.sh" "${DESIGN_DOCS[@]}" & disown
 fi
 
+# Review file committed → apply fixes
 if [[ ${#REVIEW_DOCS[@]} -gt 0 ]]; then
-    bash "$TOOLS_DIR/apply-code-fixes.sh" "${REVIEW_DOCS[0]}" "$BRANCH" &
-    disown
+    bash "$TOOLS_DIR/apply-code-fixes.sh" "${REVIEW_DOCS[0]}" "$BRANCH" & disown
 fi
 
+# Code committed (not a review/fix commit) → code review
 if [[ ${#CODE_FILES[@]} -gt 0 && "$IS_REVIEW_COMMIT" == "false" ]]; then
-    # Skip docs/* branches (design-only branches don't need code review)
-    [[ "$BRANCH" == docs/* ]] && exit 0
-    # Skip review/fix/docs commits to prevent loops
+    # Skip loop-guard commit prefixes
     COMMIT_MSG=$(git log -1 --format="%s" HEAD)
     case "$COMMIT_MSG" in
-        review:*|"fix: address code review"*|docs:*) exit 0 ;;
+        review:*|"fix: address code review"*|docs:*|chore:*) exit 0 ;;
     esac
-    bash "$TOOLS_DIR/review-code.sh" "$COMMIT_SHA" "$BRANCH" &
-    disown
+    bash "$TOOLS_DIR/review-code.sh" "$COMMIT_SHA" "$BRANCH" & disown
 fi
 
 exit 0

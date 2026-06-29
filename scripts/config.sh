@@ -1,36 +1,39 @@
 #!/usr/bin/env bash
-# config.sh — Source this file in every script; fills in per-developer values
-# from environment variables with documented defaults.
+# config.sh — Sourced by every script. Set these in your shell rc or a .env file.
 #
-# Team members set these in their shell rc or .env:
-#   export OTTOFLOW_REPO=/path/to/nirmata/ottoflow
-#   export OTTOFLOW_KB_VAULT=/path/to/obsidian/vault  # optional
-#   export SLACK_DM_CHANNEL=D0BAUA69H5Z               # your Slack DM channel ID
-#   export SLACK_DEV_CHANNEL=C0AFFBS1N73              # #dev-ottoflow channel ID
-#   export GITHUB_REPO=nirmata/ottoflow
+# Required:
+#   export REPO_PATH=/path/to/your/repo
+#   export GITHUB_REPO=org/repo-name
+#
+# Optional — Slack notifications:
+#   export SLACK_DM_CHANNEL=DXXXXXXXXX    # your personal DM channel ID
+#   export SLACK_TEAM_CHANNEL=CXXXXXXXXX  # shared team channel ID
+#   export SLACK_REVIEWER_ID=UXXXXXXXXX   # reviewer's Slack user ID for @mention
+#
+# Optional — KB-grounded review (Obsidian):
+#   export KB_VAULT=/path/to/obsidian/vault
+#
+# Optional — PR config:
+#   export GITHUB_PR_REVIEWER=github-handle   # who to request review from
+#   export GITHUB_PR_ASSIGNEE=github-handle   # who to assign the PR to
 
-# --- Required ---
-OTTOFLOW_REPO="${OTTOFLOW_REPO:?Set OTTOFLOW_REPO to the repo root, e.g. /home/you/nirmata/ottoflow}"
-GITHUB_REPO="${GITHUB_REPO:-nirmata/ottoflow}"
+REPO_PATH="${REPO_PATH:?Set REPO_PATH to the repo root, e.g. /home/you/code/myrepo}"
+GITHUB_REPO="${GITHUB_REPO:?Set GITHUB_REPO to the GitHub repo, e.g. org/repo}"
 
-# --- Optional: Slack ---
-SLACK_DM_CHANNEL="${SLACK_DM_CHANNEL:-}"       # your personal DM channel for Hermes notifications
-SLACK_DEV_CHANNEL="${SLACK_DEV_CHANNEL:-}"     # team channel for PR/design notifications
-SLACK_REVIEWER_SLACK_ID="${SLACK_REVIEWER_SLACK_ID:-}"  # reviewer's Slack user ID to @mention
-
-# --- Optional: KB vault (for Gemini-grounded review) ---
-OTTOFLOW_KB_VAULT="${OTTOFLOW_KB_VAULT:-}"     # path to Obsidian vault root
-OTTOFLOW_KB_DIR="${OTTOFLOW_KB_VAULT:+${OTTOFLOW_KB_VAULT}/Codebases/$(basename "$OTTOFLOW_REPO")}"
-
-# --- Helpers ---
-SLACK_CMD="hermes send -t slack:${SLACK_DM_CHANNEL}"
+SLACK_DM_CHANNEL="${SLACK_DM_CHANNEL:-}"
+SLACK_TEAM_CHANNEL="${SLACK_TEAM_CHANNEL:-}"
+SLACK_REVIEWER_ID="${SLACK_REVIEWER_ID:-}"
+KB_VAULT="${KB_VAULT:-}"
+KB_DIR="${KB_VAULT:+${KB_VAULT}/Codebases/$(basename "$REPO_PATH")}"
+GITHUB_PR_REVIEWER="${GITHUB_PR_REVIEWER:-}"
+GITHUB_PR_ASSIGNEE="${GITHUB_PR_ASSIGNEE:-}"
 
 slack_dm() {
     [[ -n "$SLACK_DM_CHANNEL" ]] && hermes send -t "slack:${SLACK_DM_CHANNEL}" "$1" || true
 }
 
-slack_dev() {
-    [[ -n "$SLACK_DEV_CHANNEL" ]] && hermes send -t "slack:${SLACK_DEV_CHANNEL}" "$1" || true
+slack_team() {
+    [[ -n "$SLACK_TEAM_CHANNEL" ]] && hermes send -t "slack:${SLACK_TEAM_CHANNEL}" "$1" || true
 }
 
 log() { echo "[$(basename "$0")] $*" >&2; }

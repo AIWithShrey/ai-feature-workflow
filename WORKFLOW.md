@@ -1,6 +1,8 @@
-# OttoFlow Feature Development Workflow
+# AI-Assisted Feature Development Workflow
 
-This document describes the end-to-end workflow for implementing a GitHub issue in this repo. The workflow uses [Hermes Agent](https://hermes-agent.nousresearch.com) as the orchestrator, Claude Code for implementation, and Gemini for adversarial design and code review.
+An end-to-end workflow for implementing GitHub issues using [Hermes Agent](https://hermes-agent.nousresearch.com) as orchestrator, Claude Code for implementation, and Gemini for adversarial design and code review.
+
+Works with any GitHub repo.
 
 ---
 
@@ -9,44 +11,66 @@ This document describes the end-to-end workflow for implementing a GitHub issue 
 Install once per developer machine:
 
 ```bash
-# 1. Hermes Agent (orchestrator)
+# Hermes Agent (orchestrator + Slack/Gemini integration)
 curl -sSL https://hermes-agent.nousresearch.com/install | sh
-hermes setup          # configure API keys (Anthropic + Google for Gemini review)
+hermes setup    # configure API keys (Anthropic + Google)
 
-# 2. Claude Code (implementation agent)
+# Claude Code (autonomous implementation agent)
 npm install -g @anthropic-ai/claude-code
-claude auth login     # browser OAuth or set ANTHROPIC_API_KEY
+claude auth login
 
-# 3. Supporting tools
-npm install -g gitnexus    # call-graph impact analysis
-brew install gh tmux       # GitHub CLI + terminal multiplexer
-
-# 4. Workflow tools (clone separately from the main repo)
-git clone git@github.com:nirmata/ottoflow-workflow-tools.git ~/nirmata/ottoflow-workflow-tools
-bash ~/nirmata/ottoflow-workflow-tools/install.sh ~/nirmata/ottoflow
+# Supporting tools
+brew install gh tmux    # GitHub CLI + terminal multiplexer
 ```
 
-The `install.sh` script will:
-- Install the `post-commit` and `post-merge` git hooks in your local clone
-- Create `~/.hermes/ottoflow-workflow.env` with a stub for your personal config
-- Print next steps
-
-Fill in your values in `~/.hermes/ottoflow-workflow.env` and source it in your shell rc:
+## Setup
 
 ```bash
-# ~/.zshrc or ~/.bashrc
-source ~/.hermes/ottoflow-workflow.env
+# Clone this tools repo somewhere on your machine
+git clone <this-repo-url> ~/workflow-tools
+
+# Run the installer, pointing it at the repo you want to use the workflow on
+bash ~/workflow-tools/install.sh /path/to/your/repo
 ```
 
-### Hermes profiles required
+The installer:
+- Symlinks `post-commit` and `post-merge` git hooks into your repo
+- Creates `~/.hermes/workflow-tools.env` with a stub for your personal config
 
-The workflow uses three Hermes profiles. Ask your team lead to share the profile configs or set them up from the docs:
+Fill in your values in `~/.hermes/workflow-tools.env` and source it in your shell:
+
+```bash
+# Add to ~/.zshrc or ~/.bashrc
+source ~/.hermes/workflow-tools.env
+```
+
+Required env vars:
+
+| Variable | Description |
+|---|---|
+| `REPO_PATH` | Absolute path to your repo |
+| `GITHUB_REPO` | GitHub repo in `org/name` format |
+| `WORKFLOW_TOOLS_DIR` | Path to this repo's `scripts/` directory |
+
+Optional (skip any you don't need):
+
+| Variable | Description |
+|---|---|
+| `SLACK_DM_CHANNEL` | Your personal Slack DM channel ID (for Hermes notifications) |
+| `SLACK_TEAM_CHANNEL` | Team channel ID (for PR/design notifications) |
+| `SLACK_REVIEWER_ID` | Reviewer's Slack user ID for @mention in PR posts |
+| `GITHUB_PR_REVIEWER` | GitHub handle to request review from on design PRs |
+| `GITHUB_PR_ASSIGNEE` | GitHub handle to assign PRs to |
+| `KB_VAULT` | Absolute path to Obsidian vault root (enables KB-grounded review) |
+
+### Hermes profiles
+
+The workflow uses three Hermes profiles. Set them up once via `hermes` config:
 
 | Profile | Role |
 |---|---|
-| `design-docs` | Drafts PROPOSAL_*.md from issue text + codebase context |
-| `codebase-explorer` | Builds the Obsidian knowledge graph for the repo |
-| `code-reviewer` | (optional) explicit code review on demand |
+| `design-docs` | Drafts design proposals from issue text + codebase context |
+| `codebase-explorer` | Builds an Obsidian knowledge graph of the repo (used for grounded review) |
 
 ---
 
@@ -55,87 +79,97 @@ The workflow uses three Hermes profiles. Ask your team lead to share the profile
 ### Step 1 — Branch + Draft Design Doc
 
 ```bash
-cd ~/nirmata/ottoflow
-git checkout main && git pull
-# Use the design-issue script — it drafts the proposal and kicks off review automatically
-bash ~/nirmata/ottoflow-workflow-tools/scripts/design-issue.sh <issue-number>
+bash ~/workflow-tools/scripts/design-issue.sh <issue-number>
 ```
 
-This script:
+This:
 1. Fetches the issue from GitHub
-2. Invokes the `design-docs` Hermes profile to draft `docs/dev/PROPOSAL_<name>.md`
-3. Immediately runs up to 3 rounds of adversarial Gemini review, editing the proposal in-place
-4. Exits when the proposal is **APPROVED** (or after 3 iterations)
+2. Invokes the `design-docs` Hermes profile to write a `PROPOSAL_*.md`
+3. Runs up to 3 rounds of adversarial Gemini review, editing the proposal in-place
+4. Exits when the proposal is **APPROVED**
 
-You will receive a Slack DM at each review iteration and a final ✅ when approved.
+You receive a Slack DM at each review iteration and a ✅ when approved.
 
-> You can also write the proposal manually and run:
-> ```bash
-> bash ~/nirmata/ottoflow-workflow-tools/scripts/review-design.sh docs/dev/PROPOSAL_<name>.md
-> ```
+You can also write the proposal manually and then run the review step directly:
+
+```bash
+bash ~/workflow-tools/scripts/review-design.sh path/to/PROPOSAL_myfeature.md
+```
 
 ### Step 2 — Open the Design PR
 
 ```bash
-bash ~/nirmata/ottoflow-workflow-tools/scripts/open-design-pr.sh \
-    <issue-number> <branch> docs/dev/PROPOSAL_<name>.md
+bash ~/workflow-tools/scripts/open-design-pr.sh \
+    <issue-number> <branch> path/to/PROPOSAL_myfeature.md
 ```
 
-This commits the approved proposal, opens a PR assigned to the reviewer (default: `patelrit`), and posts a Slack notification to the team channel. It writes `~/.hermes/pending_reviews.json` so the approval poller can track it.
+This commits the approved proposal, opens a PR, posts a Slack notification to the team channel, and writes `~/.hermes/pending_reviews.json` so the approval poller can track it.
 
 ### Step 3 — Wait for PR Approval
 
-The `ottoflow-approval-poller` cron (runs every 30 min on your machine) checks for GitHub PR approval. When it sees `APPROVED`:
-
-1. It calls `invoke-impl.sh` automatically
-2. Claude Code launches in a tmux session and implements all acceptance criteria from the proposal
-3. Runs `make generate manifests && go build ./... && go test ./... && make lint` — fixes all errors
-4. Commits with the spec commit message
-5. You receive a Slack DM when done
-
-You can also trigger implementation manually after PR approval:
+Set up the approval poller as a cron (runs every 30 min):
 
 ```bash
-bash ~/nirmata/ottoflow-workflow-tools/scripts/invoke-impl.sh \
-    <issue-number> <branch> docs/dev/PROPOSAL_<name>.md <pr-url>
+# Add to crontab: crontab -e
+*/30 * * * * source ~/.hermes/workflow-tools.env && bash ~/workflow-tools/scripts/poll-approval.sh
 ```
 
-Monitor Claude Code:
+When GitHub shows `APPROVED`, the poller automatically calls `invoke-impl.sh`, which:
+1. Writes a `.claude/commands/impl-issue-<N>.md` task file
+2. Launches Claude Code in a tmux session in accept-edits mode
+3. Waits for Claude Code to implement, test, lint, and commit
+4. Sends a Slack DM when done
+
+You can also trigger implementation manually after approving:
+
+```bash
+bash ~/workflow-tools/scripts/invoke-impl.sh \
+    <issue-number> <branch> path/to/PROPOSAL.md <pr-url>
+```
+
+Monitor Claude Code while it works:
 
 ```bash
 tmux capture-pane -t cc-impl-<issue-number> -p -S -40
 ```
 
-### Step 4 — Push + PR Review Cycle
+### Step 4 — Push + Review Cycle
 
 ```bash
 git push origin <branch>
 ```
 
-From here, code review runs automatically via the `post-commit` hook on any future commits to non-`docs/*` branches. When the implementation commit lands:
+The `post-commit` hook runs automatically on future commits:
 
-1. **Gemini reviews the diff** grounded by the codebase knowledge base
-2. On `APPROVED` → auto-pushes + Slack
-3. On `NEEDS REVISION` → commits a `REVIEW_CODE_*.md` file → Claude Code applies fixes → re-review
+| Commit contains | Hook does |
+|---|---|
+| `PROPOSAL_*.md` or `DESIGN_*.md` | Adversarial design review (up to 3 rounds) |
+| `REVIEW_CODE_*.md` | Claude Code applies fixes + re-commits |
+| Any code file | Gemini diff review; APPROVED → auto-push; NEEDS REVISION → fix loop |
+| Commit message starts `review:` / `fix: address code review` / `docs:` / `chore:` | Skipped (loop guard) |
 
-When you receive PR review findings from teammates, write a fix task and run Claude Code manually:
+When you receive manual PR review findings from teammates, write a fix task and run Claude Code:
 
 ```bash
-cat > .claude/commands/fix-pr<N>-review.md << 'EOF'
+# Write the fix task
+cat > /path/to/repo/.claude/commands/fix-pr<N>.md << 'EOF'
 # Fix PR #<N> review findings
-... enumerate each finding, exact fix required, quality gates, commit message ...
+<list each finding with exact fix required and quality gates>
+Commit: fix: address PR #<N> review findings
+Do NOT push.
 EOF
 
 # Launch Claude Code in accept-edits mode
 tmux new-session -d -s cc-fix -x 220 -y 50
-tmux send-keys -t cc-fix "cd ~/nirmata/ottoflow && claude" Enter
+tmux send-keys -t cc-fix "cd /path/to/repo && claude" Enter
 sleep 7
-# Shift+Tab three times: plan → normal → accept-edits
+# Shift+Tab three times to reach accept-edits mode
 tmux send-keys -t cc-fix BTab; sleep 0.4
 tmux send-keys -t cc-fix BTab; sleep 0.4
 tmux send-keys -t cc-fix BTab; sleep 0.5
-tmux send-keys -t cc-fix "/fix-pr<N>-review" Enter
-# Monitor:
+tmux send-keys -t cc-fix "/fix-pr<N>" Enter
+
+# Monitor
 tmux capture-pane -t cc-fix -p -S -40
 ```
 
@@ -147,55 +181,47 @@ git push origin <branch>
 
 ---
 
-## What runs automatically (post-commit hook)
-
-| Commit contains | Hook does |
-|---|---|
-| `docs/dev/PROPOSAL_*.md` or `DESIGN_*.md` | Runs `review-design.sh` (Gemini adversarial review, up to 3 rounds) |
-| `docs/dev/REVIEW_*.md` | Runs `apply-code-fixes.sh` (Claude Code fixes + re-review) |
-| `*.go` / `*.yaml` / Helm on non-`docs/*` branch | Runs `review-code.sh` (Gemini KB-grounded diff review) |
-| Commit message starts `review:` / `fix: address code review` / `docs:` | Skipped (loop guard) |
-
-The `post-merge` hook (fires when `main` is updated) rebuilds the Obsidian knowledge base via `codebase-explorer`.
-
----
-
-## Common manual commands
+## Manual commands
 
 ```bash
-# Manually run design review on an existing proposal
-bash ~/nirmata/ottoflow-workflow-tools/scripts/review-design.sh \
-    docs/dev/PROPOSAL_myfeature.md 3 88 my-branch
+# Run design review on an existing proposal (up to 5 rounds)
+bash ~/workflow-tools/scripts/review-design.sh path/to/PROPOSAL.md 5
 
-# Manually trigger KB rebuild
-bash ~/nirmata/ottoflow-workflow-tools/scripts/explore-repo.sh ~/nirmata/ottoflow
+# Manually trigger code review for a specific commit
+bash ~/workflow-tools/scripts/review-code.sh <commit-sha> <branch>
 
-# Manually trigger code review for a commit
-bash ~/nirmata/ottoflow-workflow-tools/scripts/review-code.sh <sha> <branch>
+# Rebuild the Obsidian knowledge base
+bash ~/workflow-tools/scripts/explore-repo.sh /path/to/repo
 
-# gitnexus impact analysis before touching a symbol
-cd ~/nirmata/ottoflow
-npx gitnexus analyze                                          # refresh index if stale
-npx gitnexus impact "Struct:api/v1alpha1/MyType" --repo ottoflow
+# Check approval status
+cat ~/.hermes/pending_reviews.json
 ```
 
 ---
 
-## Key constraints
+## How Claude Code is invoked
 
-- **Never use `claude -p` inside a Hermes session** — `ANTHROPIC_AUTH_TOKEN` causes a 401. Always use tmux interactive mode.
-- **Write multi-line Claude Code tasks to `.claude/commands/<name>.md`** — raw newlines in tmux send-keys split into separate shell commands. The `/<name>` slash command handles arbitrary length cleanly.
-- **Always run `make generate manifests` after any `api/v1alpha1/*.go` change** — deepcopy and CRD YAMLs must be regenerated before `go build` will succeed.
-- **Design PRs: assign `AIWithShrey`, reviewer `patelrit`** — always ready-for-review (not draft).
+**Always use tmux interactive mode, never `claude -p`** when running inside a Hermes session. The `ANTHROPIC_AUTH_TOKEN` environment variable that Hermes sets causes `claude -p` to return a 401. Interactive mode uses its own OAuth flow and is unaffected.
+
+**Write multi-line tasks to `.claude/commands/<name>.md`** and invoke as `/<name>`. Raw newlines passed through `tmux send-keys` get split into separate shell commands.
+
+**Shift+Tab cycling:** `plan → normal → accept-edits`. Requires 3 presses. Verify the status bar shows `accept edits on` before sending the task.
 
 ---
 
-## Slack channel IDs (Nirmata workspace)
+## Troubleshooting
 
-| Purpose | ID |
-|---|---|
-| Personal DM (Shreyas) | `D0BAUA69H5Z` |
-| `#dev-ottoflow` | `C0AFFBS1N73` |
-| `#code-review` | `C07Q61M5F7C` |
+**Hook does nothing after a commit**
+- Check `WORKFLOW_TOOLS_DIR` is set: `echo $WORKFLOW_TOOLS_DIR`
+- Check the hook is installed: `ls -la /path/to/repo/.git/hooks/post-commit`
 
-Set your own DM channel ID in `~/.hermes/ottoflow-workflow.env` (`SLACK_DM_CHANNEL`).
+**`claude` returns 401**
+- You're running inside Hermes. Use tmux interactive mode (the invoke scripts already do this).
+
+**Design review never reaches APPROVED**
+- Increase max iterations: `bash review-design.sh PROPOSAL.md 5`
+- Check that the proposal has a clear "Acceptance Criteria" or equivalent section — the reviewer needs concrete criteria to evaluate against.
+
+**KB-grounded review not working**
+- Set `KB_VAULT` to your Obsidian vault root
+- Run `explore-repo.sh` manually first to seed the KB

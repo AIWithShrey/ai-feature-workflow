@@ -1,84 +1,82 @@
 #!/usr/bin/env bash
-# install.sh — Install the OttoFlow workflow tools for a developer.
+# install.sh — Set up the AI workflow tools for a repository.
 #
-# Usage: bash install.sh [repo-path]
-# Default repo-path: ~/Nirmata/ottoflow
+# Usage: bash install.sh <repo-path>
 
 set -euo pipefail
 
 TOOLS_DIR="$(cd "$(dirname "$0")" && pwd)"
-REPO_PATH="${1:-$HOME/Nirmata/ottoflow}"
+REPO_PATH="${1:?Usage: bash install.sh /path/to/your/repo}"
 
-echo "=== OttoFlow Workflow Tools — Installer ==="
-echo "Tools dir : $TOOLS_DIR"
-echo "Repo path : $REPO_PATH"
+echo "=== AI Workflow Tools — Installer ==="
+echo "Tools : $TOOLS_DIR"
+echo "Repo  : $REPO_PATH"
 echo ""
 
-# Validate repo
 [[ -d "$REPO_PATH/.git" ]] || {
-    echo "ERROR: $REPO_PATH is not a git repo. Clone nirmata/ottoflow there first."
+    echo "ERROR: $REPO_PATH is not a git repository."
     exit 1
 }
 
-# Check required tools
-for cmd in hermes claude gh tmux npx; do
-    command -v "$cmd" &>/dev/null || echo "  WARN: $cmd not found — install it before running the workflow"
+# Check recommended tools
+for cmd in hermes claude gh tmux npx python3; do
+    if command -v "$cmd" &>/dev/null; then
+        echo "  ✓ $cmd found"
+    else
+        echo "  ✗ $cmd not found — install before using this workflow"
+    fi
 done
+echo ""
 
-# Make all scripts executable
-chmod +x "$TOOLS_DIR/scripts/"*.sh
-chmod +x "$TOOLS_DIR/hooks/"*
+# Make scripts executable
+chmod +x "$TOOLS_DIR/scripts/"*.sh "$TOOLS_DIR/hooks/"*
 echo "✓ Scripts marked executable"
 
-# Install git hooks (symlink so updates to tools dir propagate automatically)
+# Install git hooks (symlink so future updates propagate automatically)
 HOOKS_DIR="$REPO_PATH/.git/hooks"
 for hook in post-commit post-merge; do
     TARGET="$HOOKS_DIR/$hook"
     if [[ -f "$TARGET" && ! -L "$TARGET" ]]; then
-        echo "  Backing up existing $hook → ${TARGET}.bak"
+        echo "  Backing up existing $hook to ${TARGET}.bak"
         mv "$TARGET" "${TARGET}.bak"
     fi
     ln -sf "$TOOLS_DIR/hooks/$hook" "$TARGET"
-    echo "✓ Installed hook: $hook → $TARGET"
+    echo "✓ Hook installed: $hook"
 done
 
-# Write env stub if not present
-ENV_FILE="$HOME/.hermes/ottoflow-workflow.env"
+# Write per-developer env stub
+ENV_FILE="$HOME/.hermes/workflow-tools.env"
 if [[ ! -f "$ENV_FILE" ]]; then
     cat > "$ENV_FILE" <<EOF
-# OttoFlow workflow tools — fill in your values then source this file in your shell rc
-export OTTOFLOW_REPO="$REPO_PATH"
-export OTTOFLOW_TOOLS_DIR="$TOOLS_DIR"
-export GITHUB_REPO="nirmata/ottoflow"
+# AI workflow tools — fill in your values and source this file in your shell rc
+# (add to ~/.zshrc or ~/.bashrc: source ~/.hermes/workflow-tools.env)
 
-# Your Slack DM channel ID (for personal notifications from Hermes)
-# Find it: in Slack, right-click your name → Copy link → ID is the last segment
-export SLACK_DM_CHANNEL=""
+# Required
+export REPO_PATH="$REPO_PATH"
+export GITHUB_REPO=""           # e.g. org/repo-name
+export WORKFLOW_TOOLS_DIR="$TOOLS_DIR/scripts"
 
-# #dev-ottoflow channel (for PR/design notifications to the team)
-export SLACK_DEV_CHANNEL=""
+# Slack (optional — notifications are skipped if empty)
+export SLACK_DM_CHANNEL=""      # your personal DM channel ID
+export SLACK_TEAM_CHANNEL=""    # shared team channel ID
+export SLACK_REVIEWER_ID=""     # reviewer's Slack user ID for @mention
 
-# GitHub handle of the PR reviewer
-export GITHUB_PR_REVIEWER="patelrit"
+# PR config (optional)
+export GITHUB_PR_REVIEWER=""    # GitHub handle to request review from
+export GITHUB_PR_ASSIGNEE=""    # GitHub handle to assign PR to
 
-# Reviewer's Slack user ID (for @mention in design PR notifications)
-export SLACK_REVIEWER_SLACK_ID=""
-
-# Optional: path to your Obsidian vault root (enables KB-grounded review)
-export OTTOFLOW_KB_VAULT=""
+# Obsidian KB (optional — enables grounded review; skip if you don't use Obsidian)
+export KB_VAULT=""              # absolute path to your Obsidian vault root
 EOF
-    echo "✓ Created $ENV_FILE — fill in your values and add 'source $ENV_FILE' to your shell rc"
+    echo "✓ Created $ENV_FILE — fill in your values"
 else
-    echo "  $ENV_FILE already exists — skipping"
+    echo "  $ENV_FILE already exists — skipping (edit it manually if needed)"
 fi
 
 echo ""
-echo "=== Setup complete ==="
-echo ""
-echo "Next steps:"
-echo "  1. Edit $ENV_FILE and set your Slack channel IDs"
-echo "  2. Add to ~/.zshrc or ~/.bashrc:  source $ENV_FILE"
-echo "  3. Run: hermes setup  (if Hermes isn't configured yet)"
-echo "  4. Run: npm install -g @anthropic-ai/claude-code  (Claude Code)"
-echo "  5. Run: npm install -g gitnexus  (impact analysis)"
-echo "  6. Verify: cd $REPO_PATH && git log --oneline -1  (hooks are silent)"
+echo "=== Next steps ==="
+echo "  1. Edit $ENV_FILE — set GITHUB_REPO and your Slack channel IDs"
+echo "  2. Add to your shell rc: source $ENV_FILE"
+echo "  3. Verify Hermes is set up: hermes --version"
+echo "  4. Verify Claude Code: claude --version"
+echo "  5. See WORKFLOW.md for the full feature development workflow"

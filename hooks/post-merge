@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
-# post-merge — Rebuild Obsidian KB when landing on main.
-TOOLS_DIR="${OTTOFLOW_TOOLS_DIR:-$HOME/Nirmata/ottoflow-workflow-tools/scripts}"
+# post-merge — Rebuild Obsidian KB when landing on the default branch.
+TOOLS_DIR="${WORKFLOW_TOOLS_DIR:-}"
 
 [[ -f "$TOOLS_DIR/config.sh" ]] || exit 0
-[[ "$(git rev-parse --abbrev-ref HEAD)" == "main" ]] || exit 0
+
+# Only fire on main/master
+BRANCH=$(git rev-parse --abbrev-ref HEAD)
+[[ "$BRANCH" == "main" || "$BRANCH" == "master" ]] || exit 0
 
 COMMIT_MSG=$(git log -1 --format="%s" HEAD)
-bash "$TOOLS_DIR/explore-repo.sh" "$(git rev-parse --show-toplevel)" "merged to main: $COMMIT_MSG" &
+bash "$TOOLS_DIR/explore-repo.sh" "$(git rev-parse --show-toplevel)" "merged to $BRANCH: $COMMIT_MSG" &
 disown
 exit 0
