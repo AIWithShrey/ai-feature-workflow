@@ -49,7 +49,7 @@ if [[ ${#CODE_FILES[@]} -gt 0 && "$IS_REVIEW_COMMIT" == "false" ]]; then
     # Skip loop-guard commit prefixes
     COMMIT_MSG=$(git log -1 --format="%s" HEAD)
     case "$COMMIT_MSG" in
-        review:*|"fix: address code review"*|docs:*|chore:*) exit 0 ;;
+        review:*|"fix: address code review"*|"fix: address Copilot review"*|docs:*|chore:*) exit 0 ;;
     esac
     bash "$TOOLS_DIR/review-code.sh" "$COMMIT_SHA" "$BRANCH" & disown
 fi
